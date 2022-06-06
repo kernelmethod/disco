@@ -1,10 +1,8 @@
 //! Create a named pipe for cryptographically secure RNG (CRNG).
 
-#![feature(io_error_uncategorized)]
-#![feature(scoped_threads)]
-
 mod core;
 mod error;
+mod rng;
 mod stream;
 use crate::error::{ErrorKind, Result};
 

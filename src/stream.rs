@@ -1,8 +1,7 @@
 use crate::core::*;
 use crate::error::{ErrorKind, Result, WorkerError};
+use crate::rng::CRNG;
 
-use rand::prelude::*;
-use rand_chacha::ChaCha20Rng;
 use std::io::Write;
 use std::os::unix::fs::OpenOptionsExt;
 use std::panic;
@@ -46,8 +45,7 @@ fn open_pipe(path: &Path) -> io::Result<fs::File> {
 }
 
 fn run_worker(spec: WorkerSpec) -> Result<()> {
-    let mut rng = ChaCha20Rng::from_entropy();
-    let mut buffer = create_buffer();
+    let mut rng = CRNG::new();
 
     println!(
         "Started worker {}",
@@ -70,7 +68,7 @@ fn run_worker(spec: WorkerSpec) -> Result<()> {
 
         // Repeatedly write blocks of random data to the named pipe
         while spec.is_running() {
-            match file.write_all(&buffer) {
+            match file.write_all(rng.regenerate()) {
                 Err(e) => match e.kind() {
                     // Pipe was closed by client
                     io::ErrorKind::BrokenPipe => {
@@ -82,12 +80,14 @@ fn run_worker(spec: WorkerSpec) -> Result<()> {
                     // Other error
                     _ => return Err(ErrorKind::IOError(e)),
                 },
-                Ok(_) => {
-                    rng.fill(&mut buffer);
-                }
+                Ok(_) => {}
             };
         }
     }
+
+    // Perform rng.regenerate() one more time to erase the final
+    // key state
+    rng.regenerate();
 
     Ok(())
 }
