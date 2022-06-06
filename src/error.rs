@@ -19,6 +19,7 @@ impl WorkerError {
 /// Custom `Error` kinds for `disco`.
 #[derive(Debug)]
 pub enum ErrorKind {
+    GetRandomError(getrandom::Error),
     UnixError(Errno),
     IOError(io::Error),
     WorkerErrors(Vec<WorkerError>),
@@ -50,6 +51,9 @@ impl fmt::Display for ErrorKind {
                     write!(f, " {}", e)?;
                 }
                 Ok(())
+            }
+            ErrorKind::GetRandomError(e) => {
+                write!(f, "GetRandomError: {}", e)
             }
         }
     }

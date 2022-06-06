@@ -45,7 +45,7 @@ fn open_pipe(path: &Path) -> io::Result<fs::File> {
 }
 
 fn run_worker(spec: WorkerSpec) -> Result<()> {
-    let mut rng = CRNG::new();
+    let mut rng = CRNG::from_entropy()?;
 
     println!(
         "Started worker {}",

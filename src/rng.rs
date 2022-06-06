@@ -2,70 +2,94 @@
 //! some of the details of how random number generation is implemented
 //! and provides some additional functionality (e.g. fast key erasure).
 
-use rand::prelude::*;
-use rand_chacha::ChaCha20Rng;
+use crate::error::{ErrorKind, Result};
+use chacha20::cipher::{KeyIvInit, StreamCipher};
+use chacha20::ChaCha20;
+use getrandom;
 
-type Buffer = [u8; 1024];
+const BUFFER_LEN: usize = 1024;
+const KEY_LEN: usize = 32;
+const OUTPUT_LEN: usize = BUFFER_LEN - KEY_LEN;
 
-type CRNGKey = [u8; 32];
-type CRNGOutput = [u8; core::mem::size_of::<Buffer>() - core::mem::size_of::<CRNGKey>()];
+type Buffer = [u8; BUFFER_LEN];
+type Key = [u8; KEY_LEN];
+type Output = [u8; OUTPUT_LEN];
 
-const KEY_LEN: usize = core::mem::size_of::<CRNGKey>();
-const OUTPUT_LEN: usize = core::mem::size_of::<CRNGOutput>();
-
-pub struct CRNG {
-    buffer: Buffer,
-    rng: ChaCha20Rng,
-}
-
+/// Convert a slice to a fixed-length array.
 unsafe fn slice_to_array<const N: usize>(slice: &[u8]) -> &[u8; N] {
     &*(slice.as_ptr() as *const [u8; N])
 }
 
+pub struct CRNG {
+    buffer: Buffer,
+    nonce: [u8; 12],
+}
+
 impl CRNG {
-    pub fn new() -> Self {
-        CRNG {
-            buffer: [0u8; core::mem::size_of::<Buffer>()],
-            rng: ChaCha20Rng::from_entropy(),
+    pub fn from_entropy() -> Result<Self> {
+        let buffer = [0u8; BUFFER_LEN];
+        let nonce = [0u8; 12];
+        let mut crng = CRNG { buffer, nonce };
+
+        // Initialize the key for the CRNG using the operating system's
+        // random stream.
+        let key_slice = crng.key_slice();
+
+        match getrandom::getrandom(&mut key_slice[..]) {
+            Err(e) => Err(ErrorKind::GetRandomError(e)),
+            Ok(_) => Ok(crng),
         }
     }
 
-    fn key_slice(&self) -> &[u8] {
-        &self.buffer[..core::mem::size_of::<CRNGKey>()]
+    fn key_slice(&mut self) -> &mut [u8] {
+        &mut self.buffer[..KEY_LEN]
     }
 
     fn output_slice(&self) -> &[u8] {
-        &self.buffer[core::mem::size_of::<CRNGKey>()..]
+        &self.buffer[KEY_LEN..]
     }
 
-    pub fn output(&self) -> &CRNGOutput {
+    pub fn key(&mut self) -> &Key {
+        unsafe { slice_to_array::<KEY_LEN>(self.key_slice()) }
+    }
+
+    pub fn output(&self) -> &Output {
         unsafe { slice_to_array::<OUTPUT_LEN>(self.output_slice()) }
     }
 
-    pub fn regenerate(&mut self) -> &CRNGOutput {
-        self.rng.fill(&mut self.buffer);
-
-        // Replace the current key of the internal RNG
-        let key = unsafe { slice_to_array::<KEY_LEN>(self.key_slice()) };
-        self.rng = ChaCha20Rng::from_seed(*key);
-
+    pub fn regenerate(&mut self) -> &Output {
+        let nonce = self.nonce;
+        let mut cipher = ChaCha20::new(self.key().into(), &nonce.into());
+        cipher.apply_keystream(&mut self.buffer);
         self.output()
     }
 }
 
 #[cfg(test)]
 mod test {
-    use super::CRNG;
+    use super::*;
+
+    /// Check that CRNG::from_entropy() creates a key that is filled
+    /// with random data.
+    #[test]
+    fn test_from_entropy() {
+        let mut crng = CRNG::from_entropy().unwrap();
+        let key = crng.key().clone();
+        let zeros = [0u8; KEY_LEN];
+
+        assert_eq!(zeros.len(), key.len());
+        assert!(key != zeros);
+    }
 
     /// Check that we are erasing the key every time we regenerate the
     /// output of the CRNG.
     #[test]
     fn test_fke() {
-        let mut crng = CRNG::new();
-        let key1 = crng.rng.get_seed();
+        let mut crng = CRNG::from_entropy().unwrap();
+        let key1 = crng.key().clone();
 
         crng.regenerate();
-        let key2 = crng.rng.get_seed();
+        let key2 = crng.key().clone();
 
         assert!(key1 != key2);
     }
