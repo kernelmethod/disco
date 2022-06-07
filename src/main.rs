@@ -95,17 +95,17 @@ mod tests {
     use std::error::Error;
     use std::fs::{self, File};
     use std::io::Read;
+    use std::result::Result;
     use std::sync::atomic::Ordering;
     use test::Bencher;
 
     const BENCH_BUFSIZE: usize = 1 << 20;
 
-    #[bench]
-    fn bench_pipe(b: &mut Bencher) -> std::result::Result<(), Box<dyn Error>> {
+    fn bench_pipe_with_threads(b: &mut Bencher, n_threads: usize) -> Result<(), Box<dyn Error>> {
         let path = get_fifo_path(None);
         create_fifo(&path, None)?;
 
-        let (running, handles) = stream::start_workers(&path, 1)?;
+        let (running, handles) = stream::start_workers(&path, n_threads)?;
         let mut file = File::open(&path)?;
         let mut buf = [0u8; BENCH_BUFSIZE];
 
@@ -120,6 +120,26 @@ mod tests {
         stream::join_workers(handles)?;
         fs::remove_file(&path)?;
         Ok(())
+    }
+
+    #[bench]
+    fn bench_pipe_n1(b: &mut Bencher) -> Result<(), Box<dyn Error>> {
+        bench_pipe_with_threads(b, 1)
+    }
+
+    #[bench]
+    fn bench_pipe_n2(b: &mut Bencher) -> Result<(), Box<dyn Error>> {
+        bench_pipe_with_threads(b, 2)
+    }
+
+    #[bench]
+    fn bench_pipe_n4(b: &mut Bencher) -> Result<(), Box<dyn Error>> {
+        bench_pipe_with_threads(b, 4)
+    }
+
+    #[bench]
+    fn bench_pipe_n8(b: &mut Bencher) -> Result<(), Box<dyn Error>> {
+        bench_pipe_with_threads(b, 8)
     }
 
     #[cfg(target_os = "linux")]
