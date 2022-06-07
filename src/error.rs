@@ -25,6 +25,8 @@ pub enum ErrorKind {
     WorkerErrors(Vec<WorkerError>),
 }
 
+impl std::error::Error for ErrorKind {}
+
 /// Custom `Result` type for `disco`.
 pub type Result<T> = core::result::Result<T, ErrorKind>;
 

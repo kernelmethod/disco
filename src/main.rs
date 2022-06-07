@@ -1,5 +1,7 @@
 //! Create a named pipe for cryptographically secure RNG (CRNG).
 
+#![feature(test)]
+
 mod core;
 mod error;
 mod rng;
@@ -7,6 +9,7 @@ mod stream;
 use crate::error::{ErrorKind, Result};
 
 extern crate libc;
+extern crate test;
 
 use clap::{arg, command, Command};
 use nix::{sys::stat::Mode, unistd};
@@ -43,7 +46,6 @@ fn get_fifo_path(path: Option<&str>) -> PathBuf {
             None => {
                 let tf = NamedTempFile::new().unwrap();
                 let path = String::from(tf.path().to_str().unwrap());
-                println!("Creating FIFO at {}", path);
                 path
             }
         }
@@ -71,7 +73,8 @@ fn main() -> Result<()> {
 
     // Attempt to create the named pipe
     create_fifo(&path, None)?;
-    let ret = stream::start_workers(&path, n_threads);
+    println!("Created FIFO at {}", display);
+    let ret = stream::run_workers(&path, n_threads);
 
     println!("Closing stream...");
 
@@ -83,4 +86,48 @@ fn main() -> Result<()> {
     };
 
     ret
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::error::Error;
+    use std::fs::{self, File};
+    use std::io::Read;
+    use std::sync::atomic::Ordering;
+    use test::Bencher;
+
+    const BENCH_BUFSIZE: usize = 1 << 20;
+
+    #[bench]
+    fn bench_pipe(b: &mut Bencher) -> std::result::Result<(), Box<dyn Error>> {
+        let path = get_fifo_path(None);
+        create_fifo(&path, None)?;
+
+        let (running, handles) = stream::start_workers(&path, 1);
+        let mut file = File::open(&path)?;
+        let mut buf = [0u8; BENCH_BUFSIZE];
+
+        // Read from the pipe a few times to ensure that it's working correctly
+        file.read_exact(&mut buf)?;
+        file.read_exact(&mut buf)?;
+
+        b.iter(|| file.read_exact(&mut buf));
+
+        // Clean-up
+        running.store(false, Ordering::SeqCst);
+        stream::join_workers(handles)?;
+        fs::remove_file(&path)?;
+        Ok(())
+    }
+
+    #[cfg(target_os = "linux")]
+    #[bench]
+    fn bench_urandom(b: &mut Bencher) -> std::result::Result<(), Box<dyn Error>> {
+        let mut file = File::open("/dev/urandom")?;
+        let mut buf = [0u8; BENCH_BUFSIZE];
+        b.iter(|| file.read_exact(&mut buf));
+
+        Ok(())
+    }
 }

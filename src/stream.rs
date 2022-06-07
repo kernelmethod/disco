@@ -2,7 +2,8 @@ use crate::core::*;
 use crate::error::{ErrorKind, Result, WorkerError};
 use crate::rng::CRNG;
 
-use std::io::Write;
+use std::fs;
+use std::io::{self, Write};
 use std::os::unix::fs::OpenOptionsExt;
 use std::panic;
 use std::path::{Path, PathBuf};
@@ -10,8 +11,7 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
 };
-use std::thread;
-use std::{fs, io};
+use std::thread::{self, JoinHandle};
 
 #[derive(Debug)]
 pub struct WorkerSpec {
@@ -92,32 +92,26 @@ fn run_worker(spec: WorkerSpec) -> Result<()> {
     Ok(())
 }
 
-pub fn start_workers(path: &Path, n_workers: usize) -> Result<()> {
-    let running = Arc::new(AtomicBool::new(true));
-
+pub fn run_workers(path: &Path, n_workers: usize) -> Result<()> {
+    let (running, handles) = start_workers(path, n_workers);
     let r = running.clone();
     ctrlc::set_handler(move || {
         r.store(false, Ordering::SeqCst);
     })
     .expect("Error setting Ctrl-C handler");
+    join_workers(handles)
+}
 
-    let errors = (0..n_workers)
-        .map(|i| {
-            let spec = WorkerSpec::new(&path, &running);
-            thread::Builder::new()
-                .name(format!("worker {}", i))
-                .spawn(move || run_worker(spec))
-        })
-        .collect::<Vec<_>>()
+pub fn join_workers(
+    handles: Vec<std::result::Result<JoinHandle<Result<()>>, WorkerError>>,
+) -> Result<()> {
+    let errors = handles
         .into_iter()
         .enumerate()
         .filter_map(|(i, h)| {
             let h = match h {
-                Err(e) => {
-                    let err = ErrorKind::IOError(e);
-                    return Some(WorkerError::new(i, err));
-                }
                 Ok(h) => h,
+                Err(e) => return Some(e),
             };
 
             match h.join() {
@@ -132,9 +126,38 @@ pub fn start_workers(path: &Path, n_workers: usize) -> Result<()> {
         })
         .collect::<Vec<_>>();
 
-    if errors.len() > 0 {
-        Err(ErrorKind::WorkerErrors(errors))
-    } else {
+    if errors.is_empty() {
         Ok(())
+    } else {
+        Err(ErrorKind::WorkerErrors(errors))
     }
+}
+
+pub fn start_workers(
+    path: &Path,
+    n_workers: usize,
+) -> (
+    Arc<AtomicBool>,
+    Vec<std::result::Result<JoinHandle<Result<()>>, WorkerError>>,
+) {
+    let running = Arc::new(AtomicBool::new(true));
+
+    let handles = (0..n_workers)
+        .map(|i| {
+            let spec = WorkerSpec::new(&path, &running);
+            thread::Builder::new()
+                .name(format!("worker {}", i))
+                .spawn(move || run_worker(spec))
+        })
+        .enumerate()
+        .map(|(i, h)| match h {
+            Err(e) => {
+                let err = ErrorKind::IOError(e);
+                Err(WorkerError::new(i, err))
+            }
+            Ok(h) => Ok(h),
+        })
+        .collect::<Vec<_>>();
+
+    (running, handles)
 }
