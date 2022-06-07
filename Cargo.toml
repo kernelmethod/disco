@@ -11,4 +11,4 @@ clap = { version = "3.1.18", features = ["cargo"] }
 ctrlc = "3.2.2"
 getrandom = "0.2.6"
 libc = "0.2.126"
-nix = { version = "0.24.1", features = ["umask"] }
+nix = { version = "0.24.1" }

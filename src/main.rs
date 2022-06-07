@@ -32,7 +32,7 @@ fn main() -> Result<()> {
     let n_threads = matches.value_of_t("threads").expect("required");
 
     // Attempt to create the named pipe
-    let mode = Mode::S_IRWXU | Mode::S_IRGRP | Mode::S_IROTH;
+    let mode = Mode::all();
     match unistd::mkfifo(path, mode) {
         Err(e) => return Err(ErrorKind::UnixError(e)),
         _ => {}
