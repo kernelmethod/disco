@@ -5,7 +5,6 @@
 use crate::error::{ErrorKind, Result};
 use chacha20::cipher::{KeyIvInit, StreamCipher};
 use chacha20::ChaCha20;
-use getrandom;
 
 const BUFFER_LEN: usize = 1024;
 const KEY_LEN: usize = 32;
@@ -20,18 +19,18 @@ unsafe fn slice_to_array<const N: usize>(slice: &[u8]) -> &[u8; N] {
     &*(slice.as_ptr() as *const [u8; N])
 }
 
-pub struct CRNG {
+pub struct CryptoRng {
     buffer: Buffer,
     nonce: [u8; 12],
 }
 
-impl CRNG {
+impl CryptoRng {
     pub fn from_entropy() -> Result<Self> {
         let buffer = [0u8; BUFFER_LEN];
         let nonce = [0u8; 12];
-        let mut crng = CRNG { buffer, nonce };
+        let mut crng = CryptoRng { buffer, nonce };
 
-        // Initialize the key for the CRNG using the operating system's
+        // Initialize the key for the CryptoRng using the operating system's
         // random stream.
         let key_slice = crng.key_slice();
 
@@ -69,11 +68,11 @@ impl CRNG {
 mod test {
     use super::*;
 
-    /// Check that CRNG::from_entropy() creates a key that is filled
+    /// Check that CryptoRng::from_entropy() creates a key that is filled
     /// with random data.
     #[test]
     fn test_from_entropy() {
-        let mut crng = CRNG::from_entropy().unwrap();
+        let mut crng = CryptoRng::from_entropy().unwrap();
         let key = crng.key().clone();
         let zeros = [0u8; KEY_LEN];
 
@@ -82,10 +81,10 @@ mod test {
     }
 
     /// Check that we are erasing the key every time we regenerate the
-    /// output of the CRNG.
+    /// output of the CryptoRng.
     #[test]
     fn test_fke() {
-        let mut crng = CRNG::from_entropy().unwrap();
+        let mut crng = CryptoRng::from_entropy().unwrap();
         let key1 = crng.key().clone();
 
         crng.regenerate();

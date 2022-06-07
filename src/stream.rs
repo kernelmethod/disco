@@ -1,7 +1,7 @@
 use crate::core::*;
 use crate::error::{ErrorKind, Result, WorkerError};
-use crate::rng::CRNG;
-use crate::workers::WorkerSpec;
+use crate::rng::CryptoRng;
+use crate::workers::{WorkerPool, WorkerSpec};
 
 use std::fs;
 use std::io::{self, Write};
@@ -23,7 +23,7 @@ fn open_pipe(path: &Path) -> io::Result<fs::File> {
 }
 
 fn run_worker(spec: WorkerSpec) -> Result<()> {
-    let mut rng = CRNG::from_entropy()?;
+    let mut rng = CryptoRng::from_entropy()?;
 
     println!(
         "Started worker {}",
@@ -31,7 +31,7 @@ fn run_worker(spec: WorkerSpec) -> Result<()> {
     );
 
     while spec.is_running() {
-        let mut file = match open_pipe(&spec.path()) {
+        let mut file = match open_pipe(spec.path()) {
             Err(e) => {
                 if Some(libc::ENXIO) == e.raw_os_error() {
                     // No clients have opened the pipe yet
@@ -46,8 +46,8 @@ fn run_worker(spec: WorkerSpec) -> Result<()> {
 
         // Repeatedly write blocks of random data to the named pipe
         while spec.is_running() {
-            match file.write_all(rng.regenerate()) {
-                Err(e) => match e.kind() {
+            if let Err(e) = file.write_all(rng.regenerate()) {
+                match e.kind() {
                     // Pipe was closed by client
                     io::ErrorKind::BrokenPipe => {
                         break;
@@ -57,8 +57,7 @@ fn run_worker(spec: WorkerSpec) -> Result<()> {
                     }
                     // Other error
                     _ => return Err(ErrorKind::IOError(e)),
-                },
-                Ok(_) => {}
+                }
             };
         }
     }
@@ -71,13 +70,13 @@ fn run_worker(spec: WorkerSpec) -> Result<()> {
 }
 
 pub fn run_workers(path: &Path, n_workers: usize) -> Result<()> {
-    let (running, handles) = start_workers(path, n_workers)?;
-    let r = running.clone();
+    let pool = start_workers(path, n_workers)?;
+    let r = pool.running.clone();
     ctrlc::set_handler(move || {
         r.store(false, Ordering::SeqCst);
     })
     .expect("Error setting Ctrl-C handler");
-    join_workers(handles)
+    join_workers(pool.handles)
 }
 
 pub fn join_workers(handles: Vec<JoinHandle<Result<()>>>) -> Result<()> {
@@ -104,20 +103,17 @@ pub fn join_workers(handles: Vec<JoinHandle<Result<()>>>) -> Result<()> {
     }
 }
 
-pub fn start_workers(
-    path: &Path,
-    n_workers: usize,
-) -> Result<(Arc<AtomicBool>, Vec<JoinHandle<Result<()>>>)> {
+pub fn start_workers(path: &Path, n_workers: usize) -> Result<WorkerPool> {
     let running = Arc::new(AtomicBool::new(true));
 
     let handles = (0..n_workers)
         .map(|i| {
-            let spec = WorkerSpec::new(&path, &running);
+            let spec = WorkerSpec::new(path, &running);
             thread::Builder::new()
                 .name(format!("worker {}", i))
                 .spawn(move || run_worker(spec))
         })
         .collect::<std::result::Result<Vec<_>, _>>()?;
 
-    Ok((running, handles))
+    Ok(WorkerPool { running, handles })
 }

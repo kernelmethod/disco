@@ -73,17 +73,14 @@ fn main() -> Result<()> {
     let n_threads = matches.value_of_t("threads").expect("required");
 
     // Attempt to create the named pipe
-    create_fifo(&path, None)?;
+    create_fifo(path, None)?;
     println!("Created FIFO at {}", display);
-    let ret = stream::run_workers(&path, n_threads);
+    let ret = stream::run_workers(path, n_threads);
 
     println!("Closing stream...");
 
-    match fs::remove_file(&path) {
-        Err(e) => {
-            eprintln!("Unable to remove {}: {}", display, e);
-        }
-        _ => {}
+    if let Err(e) = fs::remove_file(&path) {
+        eprintln!("Unable to remove {}: {}", display, e);
     };
 
     ret
@@ -105,7 +102,7 @@ mod tests {
         let path = get_fifo_path(None);
         create_fifo(&path, None)?;
 
-        let (running, handles) = stream::start_workers(&path, n_threads)?;
+        let pool = stream::start_workers(&path, n_threads)?;
         let mut file = File::open(&path)?;
         let mut buf = [0u8; BENCH_BUFSIZE];
 
@@ -116,8 +113,8 @@ mod tests {
         b.iter(|| file.read_exact(&mut buf));
 
         // Clean-up
-        running.store(false, Ordering::SeqCst);
-        stream::join_workers(handles)?;
+        pool.running.store(false, Ordering::SeqCst);
+        stream::join_workers(pool.handles)?;
         fs::remove_file(&path)?;
         Ok(())
     }

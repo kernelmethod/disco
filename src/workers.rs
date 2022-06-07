@@ -1,8 +1,16 @@
+use crate::error::Result;
 use std::path::{Path, PathBuf};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
 };
+use std::thread::JoinHandle;
+
+#[derive(Debug)]
+pub struct WorkerPool {
+    pub running: Arc<AtomicBool>,
+    pub handles: Vec<JoinHandle<Result<()>>>,
+}
 
 /// Struct specifying the parameters and work that a given
 /// thread will perform.
@@ -20,7 +28,7 @@ impl WorkerSpec {
     /// Create a new `WorkerSpec` instance.
     pub fn new(path: &Path, running: &Arc<AtomicBool>) -> Self {
         WorkerSpec {
-            pathbuf: path.clone().to_owned(),
+            pathbuf: path.to_owned(),
             running: running.clone(),
         }
     }
