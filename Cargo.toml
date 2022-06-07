@@ -12,3 +12,8 @@ ctrlc = "3.2.2"
 getrandom = "0.2.6"
 libc = "0.2.126"
 nix = { version = "0.24.1" }
+tempfile = { version = "3.3.0", optional = true }
+
+[features]
+default = ["tempfile"]
+tempfile = ["dep:tempfile"]
