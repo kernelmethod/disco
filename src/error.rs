@@ -1,4 +1,5 @@
 use nix::errno::Errno;
+use std::convert::From;
 use std::fmt;
 use std::io;
 
@@ -58,5 +59,11 @@ impl fmt::Display for ErrorKind {
                 write!(f, "GetRandomError: {}", e)
             }
         }
+    }
+}
+
+impl From<io::Error> for ErrorKind {
+    fn from(e: io::Error) -> ErrorKind {
+        ErrorKind::IOError(e)
     }
 }

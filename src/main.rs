@@ -6,6 +6,7 @@ mod core;
 mod error;
 mod rng;
 mod stream;
+mod workers;
 use crate::error::{ErrorKind, Result};
 
 extern crate libc;
@@ -104,7 +105,7 @@ mod tests {
         let path = get_fifo_path(None);
         create_fifo(&path, None)?;
 
-        let (running, handles) = stream::start_workers(&path, 1);
+        let (running, handles) = stream::start_workers(&path, 1)?;
         let mut file = File::open(&path)?;
         let mut buf = [0u8; BENCH_BUFSIZE];
 
