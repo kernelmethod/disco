@@ -25,11 +25,6 @@ fn open(path: &Path) -> io::Result<fs::File> {
 fn run_worker(spec: WorkerSpec) -> Result<()> {
     let mut rng = CryptoRng::from_entropy()?;
 
-    println!(
-        "Started worker {}",
-        thread::current().name().unwrap_or("???"),
-    );
-
     while spec.is_running() {
         let mut stream = match open(spec.path()) {
             Err(e) => {

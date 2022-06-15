@@ -7,99 +7,71 @@ mod error;
 mod rng;
 mod stream;
 mod workers;
-use crate::error::{ErrorKind, Result};
+use crate::error::Result;
 
 extern crate libc;
 extern crate test;
 
 use clap::{arg, command, Command};
-use nix::{sys::stat::Mode, unistd};
-use std::fs;
-use std::path::{Path, PathBuf};
-
-#[cfg(feature = "tempfile")]
-use tempfile::NamedTempFile;
+use std::path::Path;
 
 fn create_argparser() -> Command<'static> {
-    let cmd = command!().arg(
-        arg!(-t --threads "The number of worker threads to spawn")
-            .default_value("1")
-            .validator(|s| s.parse::<usize>())
-            .required(false),
-    );
-
-    if cfg!(feature = "tempfile") {
-        let help = concat!(
-            "The path to the named pipe that should be created. ",
-            "If unset, a temporary file will be created for the pipe."
-        );
-
-        cmd.arg(arg!([path]).help(help).required(false))
-    } else {
-        cmd.arg(arg!([path] "The path to the named pipe that should be created.").required(true))
-    }
-}
-
-fn get_fifo_path(path: Option<&str>) -> PathBuf {
-    let path = if cfg!(feature = "tempfile") {
-        match path {
-            Some(path) => String::from(path),
-            None => {
-                let tf = NamedTempFile::new().unwrap();
-                let path = String::from(tf.path().to_str().unwrap());
-                path
-            }
-        }
-    } else {
-        String::from(path.expect("required"))
-    };
-
-    Path::new(&path).to_owned()
-}
-
-fn create_fifo(path: &Path, mode: Option<Mode>) -> Result<()> {
-    let mode = mode.unwrap_or(Mode::all());
-    match unistd::mkfifo(path, mode) {
-        Err(e) => Err(ErrorKind::UnixError(e)),
-        _ => Ok(()),
-    }
+    command!()
+        .arg(
+            arg!(-t --threads "The number of worker threads to spawn")
+                .default_value("1")
+                .validator(|s| s.parse::<usize>())
+                .required(false),
+        )
+        .arg(
+            arg!(-o --output "The file to write to; defaults to /dev/stdout")
+                .default_value("/dev/stdout")
+                .required(false),
+        )
 }
 
 fn main() -> Result<()> {
     let matches = create_argparser().get_matches();
-    let path = get_fifo_path(matches.value_of("path"));
-    let path = path.as_path();
-    let display = path.display();
+
+    let path = matches.value_of("output").expect("required");
+    let path = Path::new(&path);
     let n_threads = matches.value_of_t("threads").expect("required");
 
-    // Attempt to create the named pipe
-    create_fifo(path, None)?;
-    println!("Created FIFO at {}", display);
-    let ret = stream::run_workers(path, n_threads);
-
-    println!("Closing stream...");
-
-    if let Err(e) = fs::remove_file(&path) {
-        eprintln!("Unable to remove {}: {}", display, e);
-    };
-
-    ret
+    eprintln!("Writing stream to {}", path.display());
+    stream::run_workers(path, n_threads)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use crate::error::ErrorKind;
+    use nix::{sys::stat::Mode, unistd};
     use std::error::Error;
     use std::fs::{self, File};
     use std::io::Read;
     use std::result::Result;
     use std::sync::atomic::Ordering;
+    use tempfile::NamedTempFile;
     use test::Bencher;
 
     const BENCH_BUFSIZE: usize = 1 << 20;
 
+    fn tmp_path() -> PathBuf {
+        let tf = NamedTempFile::new().unwrap();
+        let path = String::from(tf.path().to_str().unwrap());
+        Path::new(&path).to_owned()
+    }
+
+    fn create_fifo(path: &Path, mode: Option<Mode>) -> Result<(), ErrorKind> {
+        let mode = mode.unwrap_or(Mode::all());
+        unistd::mkfifo(path, mode).expect("error creating FIFO pipe");
+        Ok(())
+    }
+
     fn bench_pipe_with_threads(b: &mut Bencher, n_threads: usize) -> Result<(), Box<dyn Error>> {
-        let path = get_fifo_path(None);
+        let path = tmp_path();
+        let path = path.as_path();
         create_fifo(&path, None)?;
 
         let pool = stream::start_workers(&path, n_threads)?;

@@ -1,7 +1,6 @@
 # disco
 
-Construct a named pipe for cryptographically secure random number generation
-(CRNG).
+Generate cryptographically secure random streams.
 
 ## Installation
 
@@ -13,15 +12,18 @@ $ cargo install --git https://github.com/kernelmethod/disco.git
 
 ## Usage
 
-Create a new FIFO pipe with
+### FIFO pipes
+
+To create a `/dev/urandom`-like interface for accessing random streams, run
 
 ```bash
-$ disco /path/to/pipe
+$ mkfifo ./my-urandom
+$ disco -o ./my-urandom &
 ```
 
 You can then read data from the pipe using e.g.
 
 ```bash
-$ head -c 1000000 /path/to/pipe > data
+$ head -c 1000000 ./my-urandom > data
 ```
 

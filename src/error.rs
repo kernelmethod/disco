@@ -1,4 +1,3 @@
-use nix::errno::Errno;
 use std::convert::From;
 use std::fmt;
 use std::io;
@@ -21,7 +20,6 @@ impl WorkerError {
 #[derive(Debug)]
 pub enum ErrorKind {
     GetRandomError(getrandom::Error),
-    UnixError(Errno),
     IOError(io::Error),
     WorkerErrors(Vec<WorkerError>),
 }
@@ -42,10 +40,6 @@ impl fmt::Display for ErrorKind {
         match self {
             ErrorKind::IOError(e) => {
                 write!(f, "IOError: ")?;
-                e.fmt(f)
-            }
-            ErrorKind::UnixError(e) => {
-                write!(f, "UnixError: ")?;
                 e.fmt(f)
             }
             ErrorKind::WorkerErrors(errs) => {
