@@ -4,7 +4,7 @@ use crate::rng::CryptoRng;
 use crate::workers::{WorkerPool, WorkerSpec};
 
 use std::fs;
-use std::io::{self, Write};
+use std::io::{self, BufWriter, Write};
 use std::os::unix::fs::OpenOptionsExt;
 use std::panic;
 use std::path::Path;
@@ -14,7 +14,7 @@ use std::sync::{
 };
 use std::thread::{self, JoinHandle};
 
-fn open_pipe(path: &Path) -> io::Result<fs::File> {
+fn open(path: &Path) -> io::Result<fs::File> {
     fs::OpenOptions::new()
         .read(false)
         .write(true)
@@ -31,7 +31,7 @@ fn run_worker(spec: WorkerSpec) -> Result<()> {
     );
 
     while spec.is_running() {
-        let mut file = match open_pipe(spec.path()) {
+        let mut stream = match open(spec.path()) {
             Err(e) => {
                 if Some(libc::ENXIO) == e.raw_os_error() {
                     // No clients have opened the pipe yet
@@ -41,12 +41,12 @@ fn run_worker(spec: WorkerSpec) -> Result<()> {
                     return Err(ErrorKind::IOError(e));
                 }
             }
-            Ok(file) => file,
+            Ok(file) => BufWriter::new(file),
         };
 
         // Repeatedly write blocks of random data to the named pipe
         while spec.is_running() {
-            if let Err(e) = file.write_all(rng.regenerate()) {
+            if let Err(e) = stream.write_all(rng.regenerate()) {
                 match e.kind() {
                     // Pipe was closed by client
                     io::ErrorKind::BrokenPipe => {
