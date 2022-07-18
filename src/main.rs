@@ -13,7 +13,7 @@ extern crate libc;
 extern crate test;
 
 use clap::{arg, command, Command};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 fn create_argparser() -> Command<'static> {
     command!()
@@ -93,27 +93,32 @@ mod tests {
 
     #[bench]
     fn bench_pipe_n1(b: &mut Bencher) -> Result<(), Box<dyn Error>> {
+        println!("Writing {}-byte buffer with 1 thread", BENCH_BUFSIZE);
         bench_pipe_with_threads(b, 1)
     }
 
     #[bench]
     fn bench_pipe_n2(b: &mut Bencher) -> Result<(), Box<dyn Error>> {
+        println!("Writing {}-byte buffer with 2 threads", BENCH_BUFSIZE);
         bench_pipe_with_threads(b, 2)
     }
 
     #[bench]
     fn bench_pipe_n4(b: &mut Bencher) -> Result<(), Box<dyn Error>> {
+        println!("Writing {}-byte buffer with 4 threads", BENCH_BUFSIZE);
         bench_pipe_with_threads(b, 4)
     }
 
     #[bench]
     fn bench_pipe_n8(b: &mut Bencher) -> Result<(), Box<dyn Error>> {
+        println!("Writing {}-byte buffer with 8 threads", BENCH_BUFSIZE);
         bench_pipe_with_threads(b, 8)
     }
 
     #[cfg(target_os = "linux")]
     #[bench]
     fn bench_urandom(b: &mut Bencher) -> std::result::Result<(), Box<dyn Error>> {
+        println!("Writing {}-byte buffer from /dev/urandom", BENCH_BUFSIZE);
         let mut file = File::open("/dev/urandom")?;
         let mut buf = [0u8; BENCH_BUFSIZE];
         b.iter(|| file.read_exact(&mut buf));
